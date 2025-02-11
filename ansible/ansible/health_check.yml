@@ -1,0 +1,128 @@
+---
+- name: System Health Check
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: "/usr/bin/python3"
+    LC_ALL: "en_US.UTF-8"
+    LANG: "en_US.UTF-8"
+  tasks:
+    - block:
+        - name: Check if the host is reachable
+          ping:
+          register: host_reachable
+          ignore_unreachable: true
+
+        - name: Fail if host is unreachable
+          fail:
+            msg: "Host {{ inventory_hostname }} is unreachable!"
+          when: host_reachable.unreachable is defined
+
+        - name: Check CPU Usage
+          shell: "top -bn1 | grep 'Cpu(s)'"
+          register: cpu_usage
+
+        - name: Check Disk Usage
+          shell: "df -h"
+          register: disk_usage
+
+        - name: Check Memory Usage
+          shell: "free -m"
+          register: memory_usage
+
+        - name: Generate Health Report
+          copy:
+            content: |
+              System Health Check Report
+              ==========================
+
+              CPU Usage:
+              {{ cpu_usage.stdout | replace("\xa0", " ") | default('Error: Could not retrieve data') }}
+
+              Disk Usage:
+              {{ disk_usage.stdout | replace("\xa0", " ") | default('Error: Could not retrieve data') }}
+
+              Memory Usage:
+              {{ memory_usage.stdout | replace("\xa0", " ") | default('Error: Could not retrieve data') }}
+            dest: /tmp/health_report.txt
+
+        - name: Send Success Email Notification
+          mail:
+            host: smtp.gmail.com
+            port: 587
+            username: "{{ smtp_user }}"
+            password: "{{ smtp_password }}"
+            from: "{{ smtp_user }}"
+            to: "Sainath.reapaka@gmail.com"
+            subject: >
+              SUCCESS: Health Check Report - {{ inventory_hostname }}
+            body: >
+              System Health Check Report for {{ inventory_hostname }}
+
+              ========================================
+
+              CPU Usage:
+              {{ cpu_usage.stdout | replace("\xa0", " ") | default('Error: Could not retrieve data') }}
+
+              Disk Usage:
+              {{ disk_usage.stdout | replace("\xa0", " ") | default('Error: Could not retrieve data') }}
+
+              Memory Usage:
+              {{ memory_usage.stdout | replace("\xa0", " ") | default('Error: Could not retrieve data') }}
+          when: cpu_usage.rc == 0 and disk_usage.rc == 0 and memory_usage.rc == 0
+          delegate_to: localhost
+          become: false
+
+      rescue:
+        - name: Send Error Email Notification (Task Failure)
+          mail:
+            host: smtp.gmail.com
+            port: 587
+            username: "{{ smtp_user }}"
+            password: "{{ smtp_password }}"
+            from: "{{ smtp_user }}"
+            to: "Sainath.reapaka@gmail.com"
+            subject: >
+              ERROR: System Health Check Failed - {{ inventory_hostname }}
+            body: >
+              The system health check **FAILED** for {{ inventory_hostname }}.
+
+              One or more checks encountered an issue:
+
+              - CPU Usage:
+                {{ cpu_usage.stdout | replace("\xa0", " ") | default('Error occurred') }}
+
+              - Disk Usage:
+                {{ disk_usage.stdout | replace("\xa0", " ") | default('Error occurred') }}
+
+              - Memory Usage:
+                {{ memory_usage.stdout | replace("\xa0", " ") | default('Error occurred') }}
+
+              Please investigate immediately!
+          delegate_to: localhost
+          become: false
+
+      always:
+        - name: Send Email if Host is Unreachable
+          mail:
+            host: smtp.gmail.com
+            port: 587
+            username: "{{ smtp_user }}"
+            password: "{{ smtp_password }}"
+            from: "{{ smtp_user }}"
+            to: "Sainath.reapaka@gmail.com"
+            subject: >
+              CRITICAL: Host Unreachable - {{ inventory_hostname }}
+            body: >
+              The host **{{ inventory_hostname }}** is **unreachable**.
+
+              This could be due to:
+              - Network issues
+              - SSH authentication problems
+              - The server being down
+
+              Please investigate immediately!
+          when: host_reachable.unreachable is defined
+          delegate_to: localhost
+          become: false

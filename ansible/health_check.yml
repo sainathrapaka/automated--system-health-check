@@ -1,0 +1,38 @@
+---
+- name: System Health Check
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Check CPU Usage
+      shell: "top -bn1 | grep 'Cpu(s)'"
+      register: cpu_usage
+
+    - name: Check Disk Usage
+      shell: "df -h"
+      register: disk_usage
+
+    - name: Check Memory Usage
+      shell: "free -m"
+      register: memory_usage
+
+    - name: Generate Health Report
+      copy:
+        content: |
+          System Health Check Report
+          ==========================
+          CPU Usage:
+          {{ cpu_usage.stdout }}
+
+          Disk Usage:
+          {{ disk_usage.stdout }}
+
+          Memory Usage:
+          {{ memory_usage.stdout }}
+        dest: /tmp/health_report.txt
+
+    - name: Display Health Report
+      debug:
+        msg: |
+          CPU Usage: {{ cpu_usage.stdout }}
+          Disk Usage: {{ disk_usage.stdout }}
+          Memory Usage: {{ memory_usage.stdout }}
