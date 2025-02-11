@@ -1,0 +1,89 @@
+---
+- name: Local System Health Check (macOS)
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Check CPU Usage (macOS)
+      shell: "top -l 1 | grep 'CPU usage'"
+      register: cpu_usage
+      ignore_errors: true
+
+    - name: Check Disk Usage
+      shell: "df -h"
+      register: disk_usage
+      ignore_errors: true
+
+    - name: Check Memory Usage (macOS)
+      shell: "vm_stat | awk 'NR==2{print $3}' | sed 's/\\.//'"
+      register: memory_usage
+      ignore_errors: true
+
+    - name: Generate Local Health Report
+      copy:
+        content: |
+          Local System Health Check Report (macOS)
+          ==========================
+
+          CPU Usage:
+          {{ cpu_usage.stdout | default('Error: Could not retrieve data') }}
+
+          Disk Usage:
+          {{ disk_usage.stdout | default('Error: Could not retrieve data') }}
+
+          Memory Usage:
+          {{ memory_usage.stdout | default('Error: Could not retrieve data') }}
+        dest: /tmp/local_health_report.txt
+
+    - name: Send Success Email Notification
+      mail:
+        host: smtp.gmail.com
+        port: 587
+        username: "{{ smtp_user }}"
+        password: "{{ smtp_password }}"
+        from: "{{ smtp_user }}"
+        to: "Sainath.reapaka@gmail.com"
+        subject: >
+          SUCCESS: Local System Health Check - {{ inventory_hostname }}
+        body: >
+          Local System Health Check Report for {{ inventory_hostname }}
+
+          ========================================
+
+          CPU Usage:
+          {{ cpu_usage.stdout | default('Error: Could not retrieve data') }}
+
+          Disk Usage:
+          {{ disk_usage.stdout | default('Error: Could not retrieve data') }}
+
+          Memory Usage:
+          {{ memory_usage.stdout | default('Error: Could not retrieve data') }}
+      when: cpu_usage.rc == 0 and disk_usage.rc == 0 and memory_usage.rc == 0
+      delegate_to: localhost
+
+    - name: Send Error Email Notification (Task Failure)
+      mail:
+        host: smtp.gmail.com
+        port: 587
+        username: "{{ smtp_user }}"
+        password: "{{ smtp_password }}"
+        from: "{{ smtp_user }}"
+        to: "Sainath.reapaka@gmail.com"
+        subject: >
+          ERROR: Local System Health Check Failed - {{ inventory_hostname }}
+        body: >
+          The local system health check **FAILED** for {{ inventory_hostname }}.
+
+          One or more checks encountered an issue:
+
+          - CPU Usage:
+            {{ cpu_usage.stdout | default('Error occurred - no data available') }}
+
+          - Disk Usage:
+            {{ disk_usage.stdout | default('Error occurred - no data available') }}
+
+          - Memory Usage:
+            {{ memory_usage.stdout | default('Error occurred - no data available') }}
+
+          Please investigate immediately!
+      when: cpu_usage.rc != 0 or disk_usage.rc != 0 or memory_usage.rc != 0
+      delegate_to: localhost
